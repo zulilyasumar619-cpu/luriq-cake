@@ -1,12 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product } from "@/lib/supabase";
+import {
+  supabase,
+  Product,
+  Settings,
+  getDiscountedPrice,
+  hasDiscount,
+} from "@/lib/supabase";
 
 // ===== KONFIGURASI BISNIS =====
 const BUSINESS_CONFIG = {
   name: "Luriq Cake & Cookies",
-  whatsapp: "6281345468369", // Format: 62 + nomor tanpa 0 di depan
+  whatsapp: "6281345468369",
   email: "hello@luriq.com",
   location: "Desa Lopo, Kec. Batudaa Pantai, Kota Gorontalo",
   payment: {
@@ -19,6 +25,7 @@ const BUSINESS_CONFIG = {
 // ==============================
 
 type PaymentMethod = "dana" | "cod";
+type DeliveryMethod = "pickup" | "delivery";
 
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -27,11 +34,14 @@ export default function Home() {
   const [showCart, setShowCart] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("dana");
+  const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("pickup");
   const [customerName, setCustomerName] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
+  const [deliveryEnabled, setDeliveryEnabled] = useState(false);
 
   useEffect(() => {
     fetchProducts();
+    fetchSettings();
   }, []);
 
   async function fetchProducts() {
@@ -45,6 +55,18 @@ export default function Home() {
     setLoading(false);
   }
 
+  async function fetchSettings() {
+    const { data, error } = await supabase
+      .from("settings")
+      .select("*")
+      .eq("id", 1)
+      .single();
+    if (!error && data) {
+      const s = data as Settings;
+      setDeliveryEnabled(s.delivery_enabled);
+    }
+  }
+
   function addToCart(p: Product) {
     setCart((c) => [...c, p]);
     setShowCart(true);
@@ -54,13 +76,16 @@ export default function Home() {
     setCart((c) => c.filter((_, i) => i !== index));
   }
 
-  const total = cart.reduce((sum, p) => sum + Number(p.price), 0);
+  // Total pakai harga diskon
+  const total = cart.reduce((sum, p) => sum + getDiscountedPrice(p), 0);
 
   function openCheckout() {
     if (cart.length === 0) {
       alert("Keranjang masih kosong!");
       return;
     }
+    // Reset delivery method ke pickup kalau delivery dimatiin admin
+    if (!deliveryEnabled) setDeliveryMethod("pickup");
     setShowCart(false);
     setShowCheckout(true);
   }
@@ -70,20 +95,37 @@ export default function Home() {
       alert("Mohon isi nama kamu");
       return;
     }
-    if (!customerAddress.trim()) {
+    if (deliveryMethod === "delivery" && !customerAddress.trim()) {
       alert("Mohon isi alamat pengiriman");
       return;
     }
 
-    // Format daftar pesanan
+    // Format daftar pesanan (tampilkan diskon kalau ada)
     const orderLines = cart
-      .map(
-        (p, i) =>
-          `${i + 1}. ${p.name} - Rp ${Number(p.price).toLocaleString("id-ID")}`
-      )
+      .map((p, i) => {
+        const finalPrice = getDiscountedPrice(p);
+        if (hasDiscount(p)) {
+          return `${i + 1}. ${p.name} - Rp ${finalPrice.toLocaleString(
+            "id-ID"
+          )} (diskon ${p.discount_percent}%25 dari Rp ${Number(
+            p.price
+          ).toLocaleString("id-ID")})`;
+        }
+        return `${i + 1}. ${p.name} - Rp ${finalPrice.toLocaleString("id-ID")}`;
+      })
       .join("%0A");
 
-    // Format info pembayaran
+    // Info metode pengambilan
+    const deliveryInfo =
+      deliveryMethod === "pickup"
+        ? `*Metode Pengambilan:* Jemput di Tempat%0A*Lokasi:* ${encodeURIComponent(
+            BUSINESS_CONFIG.location
+          )}`
+        : `*Metode Pengambilan:* Delivery%0A*Alamat:* ${encodeURIComponent(
+            customerAddress
+          )}%0A_(Ongkir akan dibahas via chat)_`;
+
+    // Info pembayaran
     let paymentInfo = "";
     if (paymentMethod === "dana") {
       paymentInfo = `*Metode Pembayaran:* DANA%0A*Nomor DANA:* ${BUSINESS_CONFIG.payment.dana.number}%0A*Atas Nama:* ${BUSINESS_CONFIG.payment.dana.name}`;
@@ -91,11 +133,10 @@ export default function Home() {
       paymentInfo = `*Metode Pembayaran:* COD (Bayar di Tempat)`;
     }
 
-    // Format pesan WhatsApp
     const message =
-      `*PESANAN BARU - ${BUSINESS_CONFIG.name}*%0A%0A` +
-      `*Nama:* ${customerName}%0A` +
-      `*Alamat:* ${customerAddress}%0A%0A` +
+      `*PESANAN BARU - ${encodeURIComponent(BUSINESS_CONFIG.name)}*%0A%0A` +
+      `*Nama:* ${encodeURIComponent(customerName)}%0A%0A` +
+      `${deliveryInfo}%0A%0A` +
       `*Detail Pesanan:*%0A${orderLines}%0A%0A` +
       `*Total:* Rp ${total.toLocaleString("id-ID")}%0A%0A` +
       `${paymentInfo}%0A%0A` +
@@ -174,44 +215,68 @@ export default function Home() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {products.map((product) => (
-              <div
-                key={product.id}
-                className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition"
-              >
-                <div className="h-64 bg-sand flex items-center justify-center overflow-hidden">
-                  {product.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={product.image_url}
-                      alt={product.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-caramel text-sm">
-                      🍪 Gambar Cookies
-                    </span>
+            {products.map((product) => {
+              const discounted = hasDiscount(product);
+              const finalPrice = getDiscountedPrice(product);
+              return (
+                <div
+                  key={product.id}
+                  className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition relative"
+                >
+                  {/* Badge Diskon */}
+                  {discounted && (
+                    <div className="absolute top-3 left-3 z-10 bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-md">
+                      -{product.discount_percent}% OFF
+                    </div>
                   )}
-                </div>
-                <div className="p-6">
-                  <h3 className="font-medium text-xl mb-1">{product.name}</h3>
-                  <p className="text-caramel text-sm mb-4 line-clamp-2">
-                    {product.description || "Cookies premium pilihan."}
-                  </p>
-                  <div className="flex justify-between items-center">
-                    <span className="text-lg font-semibold">
-                      Rp {Number(product.price).toLocaleString("id-ID")}
-                    </span>
-                    <button
-                      onClick={() => addToCart(product)}
-                      className="bg-coffee text-white px-4 py-2 rounded-full text-xs hover:bg-caramel"
-                    >
-                      + Keranjang
-                    </button>
+
+                  <div className="h-64 bg-sand flex items-center justify-center overflow-hidden">
+                    {product.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={product.image_url}
+                        alt={product.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-caramel text-sm">
+                        🍪 Gambar Cookies
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-6">
+                    <h3 className="font-medium text-xl mb-1">{product.name}</h3>
+                    <p className="text-caramel text-sm mb-4 line-clamp-2">
+                      {product.description || "Cookies premium pilihan."}
+                    </p>
+                    <div className="flex justify-between items-center">
+                      <div className="flex flex-col">
+                        {discounted ? (
+                          <>
+                            <span className="text-xs text-gray-400 line-through">
+                              Rp {Number(product.price).toLocaleString("id-ID")}
+                            </span>
+                            <span className="text-lg font-semibold text-red-600">
+                              Rp {finalPrice.toLocaleString("id-ID")}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-lg font-semibold">
+                            Rp {Number(product.price).toLocaleString("id-ID")}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => addToCart(product)}
+                        className="bg-coffee text-white px-4 py-2 rounded-full text-xs hover:bg-caramel"
+                      >
+                        + Keranjang
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -250,7 +315,9 @@ export default function Home() {
             ✉️ Email
           </a>
         </div>
-        <p className="text-sm text-caramel mt-8">📍 {BUSINESS_CONFIG.location}</p>
+        <p className="text-sm text-caramel mt-8">
+          📍 {BUSINESS_CONFIG.location}
+        </p>
       </section>
 
       {/* Footer */}
@@ -292,25 +359,40 @@ export default function Home() {
             ) : (
               <>
                 <div className="space-y-3 mb-6">
-                  {cart.map((p, i) => (
-                    <div
-                      key={i}
-                      className="flex justify-between items-center bg-cream p-3 rounded-xl"
-                    >
-                      <div>
-                        <div className="font-medium">{p.name}</div>
-                        <div className="text-sm text-caramel">
-                          Rp {Number(p.price).toLocaleString("id-ID")}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => removeFromCart(i)}
-                        className="text-red-500 text-sm hover:underline"
+                  {cart.map((p, i) => {
+                    const discounted = hasDiscount(p);
+                    const finalPrice = getDiscountedPrice(p);
+                    return (
+                      <div
+                        key={i}
+                        className="flex justify-between items-center bg-cream p-3 rounded-xl"
                       >
-                        Hapus
-                      </button>
-                    </div>
-                  ))}
+                        <div>
+                          <div className="font-medium">{p.name}</div>
+                          {discounted ? (
+                            <div className="text-sm">
+                              <span className="text-gray-400 line-through mr-2">
+                                Rp {Number(p.price).toLocaleString("id-ID")}
+                              </span>
+                              <span className="text-red-600 font-semibold">
+                                Rp {finalPrice.toLocaleString("id-ID")}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="text-sm text-caramel">
+                              Rp {Number(p.price).toLocaleString("id-ID")}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => removeFromCart(i)}
+                          className="text-red-500 text-sm hover:underline"
+                        >
+                          Hapus
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <div className="border-t pt-4">
@@ -354,12 +436,22 @@ export default function Home() {
             {/* Ringkasan Pesanan */}
             <div className="bg-cream p-4 rounded-xl mb-5">
               <div className="text-sm font-medium mb-2">Ringkasan Pesanan</div>
-              {cart.map((p, i) => (
-                <div key={i} className="flex justify-between text-sm py-1">
-                  <span className="text-caramel">{p.name}</span>
-                  <span>Rp {Number(p.price).toLocaleString("id-ID")}</span>
-                </div>
-              ))}
+              {cart.map((p, i) => {
+                const finalPrice = getDiscountedPrice(p);
+                return (
+                  <div key={i} className="flex justify-between text-sm py-1">
+                    <span className="text-caramel">
+                      {p.name}
+                      {hasDiscount(p) && (
+                        <span className="ml-1 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded">
+                          -{p.discount_percent}%
+                        </span>
+                      )}
+                    </span>
+                    <span>Rp {finalPrice.toLocaleString("id-ID")}</span>
+                  </div>
+                );
+              })}
               <div className="flex justify-between border-t mt-2 pt-2 font-semibold">
                 <span>Total</span>
                 <span>Rp {total.toLocaleString("id-ID")}</span>
@@ -381,7 +473,99 @@ export default function Home() {
                   required
                 />
               </div>
-              <div>
+            </div>
+
+            {/* Pilih Metode Pengambilan */}
+            <div className="mb-5">
+              <label className="block text-sm mb-2 text-coffee font-medium">
+                Metode Pengambilan
+              </label>
+              <div className="space-y-2">
+                {/* PICKUP - selalu tersedia */}
+                <button
+                  type="button"
+                  onClick={() => setDeliveryMethod("pickup")}
+                  className={`w-full text-left border-2 rounded-xl p-4 transition ${
+                    deliveryMethod === "pickup"
+                      ? "border-coffee bg-cream"
+                      : "border-gray-200 hover:border-gray-300"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-600 rounded-lg flex items-center justify-center text-white text-lg">
+                      🏪
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-medium">Jemput di Tempat</div>
+                      <div className="text-xs text-caramel">
+                        Ambil sendiri di lokasi kami
+                      </div>
+                    </div>
+                    {deliveryMethod === "pickup" && (
+                      <span className="text-coffee">✓</span>
+                    )}
+                  </div>
+                </button>
+
+                {/* DELIVERY - cuma tampil kalau admin nyalain */}
+                {deliveryEnabled ? (
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryMethod("delivery")}
+                    className={`w-full text-left border-2 rounded-xl p-4 transition ${
+                      deliveryMethod === "delivery"
+                        ? "border-coffee bg-cream"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white text-lg">
+                        🛵
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium">Delivery (Diantar)</div>
+                        <div className="text-xs text-caramel">
+                          Ongkir dibahas via WhatsApp
+                        </div>
+                      </div>
+                      {deliveryMethod === "delivery" && (
+                        <span className="text-coffee">✓</span>
+                      )}
+                    </div>
+                  </button>
+                ) : (
+                  <div className="w-full border-2 border-dashed border-gray-200 rounded-xl p-4 opacity-60">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gray-300 rounded-lg flex items-center justify-center text-white text-lg">
+                        🛵
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-500">
+                          Delivery (Tidak Tersedia)
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          Sementara hanya jemput di tempat
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Info Lokasi Pickup atau Alamat Delivery */}
+            {deliveryMethod === "pickup" ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5 text-sm">
+                <div className="font-medium text-amber-900 mb-1">
+                  📍 Lokasi Pengambilan
+                </div>
+                <div className="text-amber-800">{BUSINESS_CONFIG.location}</div>
+                <div className="mt-2 text-xs text-amber-700 italic">
+                  Hubungi admin via WhatsApp untuk konfirmasi waktu pengambilan.
+                </div>
+              </div>
+            ) : (
+              <div className="mb-5">
                 <label className="block text-sm mb-1 text-coffee">
                   Alamat Pengiriman *
                 </label>
@@ -393,8 +577,11 @@ export default function Home() {
                   placeholder="Alamat lengkap untuk pengiriman"
                   required
                 />
+                <p className="text-xs text-caramel mt-1 italic">
+                  Ongkir akan dibahas dengan admin via WhatsApp.
+                </p>
               </div>
-            </div>
+            )}
 
             {/* Pilih Metode Pembayaran */}
             <div className="mb-5">
@@ -402,7 +589,6 @@ export default function Home() {
                 Pilih Metode Pembayaran
               </label>
               <div className="space-y-2">
-                {/* DANA */}
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("dana")}
@@ -428,7 +614,6 @@ export default function Home() {
                   </div>
                 </button>
 
-                {/* COD */}
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("cod")}
@@ -445,7 +630,7 @@ export default function Home() {
                     <div className="flex-1">
                       <div className="font-medium">Bayar di Tempat (COD)</div>
                       <div className="text-xs text-caramel">
-                        Bayar saat barang sampai
+                        Bayar saat barang sampai/diambil
                       </div>
                     </div>
                     {paymentMethod === "cod" && (
@@ -456,7 +641,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Info Detail Pembayaran (jika DANA) */}
+            {/* Info Detail DANA */}
             {paymentMethod === "dana" && (
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-5 text-sm">
                 <div className="font-medium text-blue-900 mb-2">
