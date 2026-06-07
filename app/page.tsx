@@ -3,11 +3,32 @@
 import { useEffect, useState } from "react";
 import { supabase, Product } from "@/lib/supabase";
 
+// ===== KONFIGURASI BISNIS =====
+const BUSINESS_CONFIG = {
+  name: "Luriq Cake & Cookies",
+  whatsapp: "6281345468369", // Format: 62 + nomor tanpa 0 di depan
+  email: "hello@luriq.com",
+  location: "Desa Lopo, Kec. Batudaa Pantai, Kota Gorontalo",
+  payment: {
+    dana: {
+      number: "6281345468369",
+      name: "Nirmala O Umar",
+    },
+  },
+};
+// ==============================
+
+type PaymentMethod = "dana" | "cod";
+
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState<Product[]>([]);
   const [showCart, setShowCart] = useState(false);
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("dana");
+  const [customerName, setCustomerName] = useState("");
+  const [customerAddress, setCustomerAddress] = useState("");
 
   useEffect(() => {
     fetchProducts();
@@ -35,13 +56,55 @@ export default function Home() {
 
   const total = cart.reduce((sum, p) => sum + Number(p.price), 0);
 
-  function checkoutWA() {
-    if (cart.length === 0) return;
-    const lines = cart
-      .map((p, i) => `${i + 1}. ${p.name} - Rp ${Number(p.price).toLocaleString("id-ID")}`)
+  function openCheckout() {
+    if (cart.length === 0) {
+      alert("Keranjang masih kosong!");
+      return;
+    }
+    setShowCart(false);
+    setShowCheckout(true);
+  }
+
+  function submitOrder() {
+    if (!customerName.trim()) {
+      alert("Mohon isi nama kamu");
+      return;
+    }
+    if (!customerAddress.trim()) {
+      alert("Mohon isi alamat pengiriman");
+      return;
+    }
+
+    // Format daftar pesanan
+    const orderLines = cart
+      .map(
+        (p, i) =>
+          `${i + 1}. ${p.name} - Rp ${Number(p.price).toLocaleString("id-ID")}`
+      )
       .join("%0A");
-    const msg = `Halo Luriq Cake, saya mau pesan:%0A%0A${lines}%0A%0ATotal: Rp ${total.toLocaleString("id-ID")}`;
-    window.open(`https://wa.me/?text=${msg}`, "_blank");
+
+    // Format info pembayaran
+    let paymentInfo = "";
+    if (paymentMethod === "dana") {
+      paymentInfo = `*Metode Pembayaran:* DANA%0A*Nomor DANA:* ${BUSINESS_CONFIG.payment.dana.number}%0A*Atas Nama:* ${BUSINESS_CONFIG.payment.dana.name}`;
+    } else {
+      paymentInfo = `*Metode Pembayaran:* COD (Bayar di Tempat)`;
+    }
+
+    // Format pesan WhatsApp
+    const message =
+      `*PESANAN BARU - ${BUSINESS_CONFIG.name}*%0A%0A` +
+      `*Nama:* ${customerName}%0A` +
+      `*Alamat:* ${customerAddress}%0A%0A` +
+      `*Detail Pesanan:*%0A${orderLines}%0A%0A` +
+      `*Total:* Rp ${total.toLocaleString("id-ID")}%0A%0A` +
+      `${paymentInfo}%0A%0A` +
+      `Mohon konfirmasi pesanan ini. Terima kasih! 🍪`;
+
+    window.open(
+      `https://wa.me/${BUSINESS_CONFIG.whatsapp}?text=${message}`,
+      "_blank"
+    );
   }
 
   return (
@@ -53,9 +116,15 @@ export default function Home() {
             Luriq <span className="text-caramel">Cake & Cookies</span>
           </div>
           <div className="flex items-center gap-6 text-sm">
-            <a href="#menu" className="hidden md:inline hover:text-caramel">Menu</a>
-            <a href="#about" className="hidden md:inline hover:text-caramel">Tentang</a>
-            <a href="#contact" className="hidden md:inline hover:text-caramel">Kontak</a>
+            <a href="#menu" className="hidden md:inline hover:text-caramel">
+              Menu
+            </a>
+            <a href="#about" className="hidden md:inline hover:text-caramel">
+              Tentang
+            </a>
+            <a href="#contact" className="hidden md:inline hover:text-caramel">
+              Kontak
+            </a>
             <button
               onClick={() => setShowCart(true)}
               className="relative bg-coffee text-white px-4 py-2 rounded-full text-xs hover:bg-caramel"
@@ -74,11 +143,13 @@ export default function Home() {
       {/* Hero */}
       <section className="max-w-6xl mx-auto px-6 pt-20 pb-16 text-center">
         <h1 className="text-5xl md:text-6xl font-light tracking-tight mb-6 leading-tight">
-          Cookies Lezat,<br />
+          Cookies Lezat,
+          <br />
           <span className="text-caramel italic">Dibuat dengan Cinta</span>
         </h1>
         <p className="text-lg text-caramel max-w-md mx-auto mb-8">
-          Cookies premium dari Gorontalo. Bahan pilihan, rasa yang tak terlupakan.
+          Cookies premium dari Gorontalo. Bahan pilihan, rasa yang tak
+          terlupakan.
         </p>
         <a
           href="#menu"
@@ -97,7 +168,9 @@ export default function Home() {
         ) : products.length === 0 ? (
           <div className="text-center text-caramel py-12 bg-white/50 rounded-2xl">
             <p className="mb-2">Belum ada produk.</p>
-            <p className="text-sm">Admin bisa menambahkan produk di halaman dashboard.</p>
+            <p className="text-sm">
+              Admin bisa menambahkan produk di halaman dashboard.
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -115,7 +188,9 @@ export default function Home() {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <span className="text-caramel text-sm">🍪 Gambar Cookies</span>
+                    <span className="text-caramel text-sm">
+                      🍪 Gambar Cookies
+                    </span>
                   )}
                 </div>
                 <div className="p-6">
@@ -146,9 +221,10 @@ export default function Home() {
         <div className="max-w-4xl mx-auto px-6 text-center">
           <h2 className="text-4xl font-light mb-6">Tentang Kami</h2>
           <p className="text-caramel leading-relaxed">
-            <strong>Luriq Cake & Cookies</strong> adalah usaha rumahan yang berdomisili di
-            Desa Lopo, Kecamatan Batudaa Pantai, Kota Gorontalo. Kami menghadirkan cookies
-            premium dengan bahan pilihan dan resep yang dibuat dengan penuh cinta.
+            <strong>Luriq Cake & Cookies</strong> adalah usaha rumahan yang
+            berdomisili di Desa Lopo, Kecamatan Batudaa Pantai, Kota Gorontalo.
+            Kami menghadirkan cookies premium dengan bahan pilihan dan resep
+            yang dibuat dengan penuh cinta.
           </p>
         </div>
       </section>
@@ -161,30 +237,31 @@ export default function Home() {
         </p>
         <div className="flex flex-col md:flex-row justify-center gap-4">
           <a
-            href="https://wa.me/"
+            href={`https://wa.me/${BUSINESS_CONFIG.whatsapp}`}
             target="_blank"
             className="bg-coffee text-white px-6 py-3 rounded-full hover:bg-caramel"
           >
             💬 WhatsApp
           </a>
           <a
-            href="mailto:hello@luriq.com"
+            href={`mailto:${BUSINESS_CONFIG.email}`}
             className="bg-white border border-coffee text-coffee px-6 py-3 rounded-full hover:bg-coffee hover:text-white"
           >
             ✉️ Email
           </a>
         </div>
-        <p className="text-sm text-caramel mt-8">
-          📍 Desa Lopo, Kec. Batudaa Pantai, Kota Gorontalo
-        </p>
+        <p className="text-sm text-caramel mt-8">📍 {BUSINESS_CONFIG.location}</p>
       </section>
 
       {/* Footer */}
       <footer className="bg-coffee text-white py-8">
         <div className="max-w-6xl mx-auto px-6 text-center text-sm">
-          © {new Date().getFullYear()} Luriq Cake & Cookies • Gorontalo
+          © {new Date().getFullYear()} {BUSINESS_CONFIG.name} • Gorontalo
           <div className="mt-2">
-            <a href="/admin/login" className="text-white/70 hover:text-white text-xs">
+            <a
+              href="/admin/login"
+              className="text-white/70 hover:text-white text-xs"
+            >
               Admin Login
             </a>
           </div>
@@ -203,11 +280,15 @@ export default function Home() {
           >
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-light">Keranjang</h3>
-              <button onClick={() => setShowCart(false)} className="text-2xl">×</button>
+              <button onClick={() => setShowCart(false)} className="text-2xl">
+                ×
+              </button>
             </div>
 
             {cart.length === 0 ? (
-              <p className="text-caramel text-center py-12">Keranjang masih kosong</p>
+              <p className="text-caramel text-center py-12">
+                Keranjang masih kosong
+              </p>
             ) : (
               <>
                 <div className="space-y-3 mb-6">
@@ -238,14 +319,177 @@ export default function Home() {
                     <strong>Rp {total.toLocaleString("id-ID")}</strong>
                   </div>
                   <button
-                    onClick={checkoutWA}
+                    onClick={openCheckout}
                     className="w-full bg-coffee text-white py-3 rounded-full hover:bg-caramel"
                   >
-                    Checkout via WhatsApp
+                    Lanjut Checkout
                   </button>
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Checkout Modal */}
+      {showCheckout && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowCheckout(false)}
+        >
+          <div
+            className="bg-white w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-light">Checkout</h3>
+              <button
+                onClick={() => setShowCheckout(false)}
+                className="text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Ringkasan Pesanan */}
+            <div className="bg-cream p-4 rounded-xl mb-5">
+              <div className="text-sm font-medium mb-2">Ringkasan Pesanan</div>
+              {cart.map((p, i) => (
+                <div key={i} className="flex justify-between text-sm py-1">
+                  <span className="text-caramel">{p.name}</span>
+                  <span>Rp {Number(p.price).toLocaleString("id-ID")}</span>
+                </div>
+              ))}
+              <div className="flex justify-between border-t mt-2 pt-2 font-semibold">
+                <span>Total</span>
+                <span>Rp {total.toLocaleString("id-ID")}</span>
+              </div>
+            </div>
+
+            {/* Data Customer */}
+            <div className="space-y-3 mb-5">
+              <div>
+                <label className="block text-sm mb-1 text-coffee">
+                  Nama Lengkap *
+                </label>
+                <input
+                  type="text"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-2 focus:outline-none focus:border-coffee"
+                  placeholder="Nama kamu"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1 text-coffee">
+                  Alamat Pengiriman *
+                </label>
+                <textarea
+                  value={customerAddress}
+                  onChange={(e) => setCustomerAddress(e.target.value)}
+                  rows={2}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-2 focus:outline-none focus:border-coffee"
+                  placeholder="Alamat lengkap untuk pengiriman"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Pilih Metode Pembayaran */}
+            <div className="mb-5">
+              <label className="block text-sm mb-2 text-coffee font-medium">
+                Pilih Metode Pembayaran
+              </label>
+              <div className="space-y-2">
+                {/* DANA */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("dana")}
+                  className={`w-full text-left border-2 rounded-xl p-4 transition ${
+                    paymentMethod === "dana"
+                      ? "border-coffee bg-cream"
+                      : "border-gray-200 hover:border-gray-300"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center text-white font-bold text-xs">
+                      DANA
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-medium">DANA</div>
+                      <div className="text-xs text-caramel">
+                        Transfer ke nomor DANA
+                      </div>
+                    </div>
+                    {paymentMethod === "dana" && (
+                      <span className="text-coffee">✓</span>
+                    )}
+                  </div>
+                </button>
+
+                {/* COD */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("cod")}
+                  className={`w-full text-left border-2 rounded-xl p-4 transition ${
+                    paymentMethod === "cod"
+                      ? "border-coffee bg-cream"
+                      : "border-gray-200 hover:border-gray-300"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-600 rounded-lg flex items-center justify-center text-white font-bold text-xs">
+                      COD
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-medium">Bayar di Tempat (COD)</div>
+                      <div className="text-xs text-caramel">
+                        Bayar saat barang sampai
+                      </div>
+                    </div>
+                    {paymentMethod === "cod" && (
+                      <span className="text-coffee">✓</span>
+                    )}
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Info Detail Pembayaran (jika DANA) */}
+            {paymentMethod === "dana" && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-5 text-sm">
+                <div className="font-medium text-blue-900 mb-2">
+                  💳 Detail Pembayaran DANA
+                </div>
+                <div className="space-y-1 text-blue-800">
+                  <div>
+                    <span className="text-blue-600">Nomor DANA:</span>{" "}
+                    <strong>{BUSINESS_CONFIG.payment.dana.number}</strong>
+                  </div>
+                  <div>
+                    <span className="text-blue-600">Atas Nama:</span>{" "}
+                    <strong>{BUSINESS_CONFIG.payment.dana.name}</strong>
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-blue-700 italic">
+                  Transfer sesuai total, lalu kirim bukti via WhatsApp setelah
+                  klik tombol di bawah.
+                </div>
+              </div>
+            )}
+
+            {/* Tombol Submit */}
+            <button
+              onClick={submitOrder}
+              className="w-full bg-green-600 text-white py-3 rounded-full hover:bg-green-700 flex items-center justify-center gap-2 font-medium"
+            >
+              💬 Kirim Pesanan via WhatsApp
+            </button>
+
+            <p className="text-xs text-center text-caramel mt-3">
+              Pesanan akan dikirim ke WhatsApp admin untuk konfirmasi
+            </p>
           </div>
         </div>
       )}
