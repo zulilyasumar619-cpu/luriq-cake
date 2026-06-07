@@ -10,6 +10,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Product | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   // form state
   const [name, setName] = useState("");
@@ -54,6 +55,50 @@ export default function AdminDashboard() {
     setPrice(String(p.price));
     setImageUrl(p.image_url || "");
     setShowForm(true);
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("File harus berupa gambar (JPG, PNG, dll)");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Ukuran gambar maksimal 5MB");
+      return;
+    }
+
+    setUploading(true);
+
+    try {
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${Date.now()}-${Math.random()
+        .toString(36)
+        .substring(2, 8)}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("product-images")
+        .upload(fileName, file);
+
+      if (uploadError) {
+        alert("Gagal upload: " + uploadError.message);
+        setUploading(false);
+        return;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from("product-images")
+        .getPublicUrl(fileName);
+
+      setImageUrl(urlData.publicUrl);
+    } catch (err) {
+      alert("Error: " + (err as Error).message);
+    }
+
+    setUploading(false);
   }
 
   async function saveProduct(e: React.FormEvent) {
@@ -109,7 +154,9 @@ export default function AdminDashboard() {
             <h1 className="text-3xl md:text-4xl font-light text-coffee">
               Admin Dashboard
             </h1>
-            <p className="text-caramel text-sm mt-1">Kelola produk Luriq Cake & Cookies</p>
+            <p className="text-caramel text-sm mt-1">
+              Kelola produk Luriq Cake & Cookies
+            </p>
           </div>
           <div className="flex gap-3">
             <a
@@ -147,10 +194,7 @@ export default function AdminDashboard() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {products.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex gap-4 bg-cream p-4 rounded-xl"
-                >
+                <div key={p.id} className="flex gap-4 bg-cream p-4 rounded-xl">
                   <div className="w-20 h-20 bg-sand rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
                     {p.image_url ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -209,7 +253,9 @@ export default function AdminDashboard() {
 
             <form onSubmit={saveProduct} className="space-y-4">
               <div>
-                <label className="block text-sm mb-1 text-coffee">Nama Produk</label>
+                <label className="block text-sm mb-1 text-coffee">
+                  Nama Produk
+                </label>
                 <input
                   type="text"
                   value={name}
@@ -219,7 +265,9 @@ export default function AdminDashboard() {
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1 text-coffee">Deskripsi</label>
+                <label className="block text-sm mb-1 text-coffee">
+                  Deskripsi
+                </label>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -228,7 +276,9 @@ export default function AdminDashboard() {
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1 text-coffee">Harga (Rp)</label>
+                <label className="block text-sm mb-1 text-coffee">
+                  Harga (Rp)
+                </label>
                 <input
                   type="number"
                   value={price}
@@ -238,18 +288,55 @@ export default function AdminDashboard() {
                   min="0"
                 />
               </div>
+
+              {/* Upload Gambar */}
               <div>
-                <label className="block text-sm mb-1 text-coffee">URL Gambar</label>
-                <input
-                  type="url"
-                  value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-2 focus:outline-none focus:border-coffee"
-                  placeholder="https://..."
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Paste link gambar (bisa dari Imgur, Google Drive, atau Supabase Storage)
-                </p>
+                <label className="block text-sm mb-1 text-coffee">
+                  Gambar Produk
+                </label>
+
+                {imageUrl && (
+                  <div className="mb-3 relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={imageUrl}
+                      alt="Preview"
+                      className="w-full h-40 object-cover rounded-xl"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setImageUrl("")}
+                      className="absolute top-2 right-2 bg-red-500 text-white w-7 h-7 rounded-full text-xs hover:bg-red-600"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+
+                <label className="block">
+                  <div className="border-2 border-dashed border-gray-300 rounded-xl px-4 py-6 text-center cursor-pointer hover:border-coffee hover:bg-cream transition">
+                    {uploading ? (
+                      <span className="text-caramel">⏳ Mengupload...</span>
+                    ) : (
+                      <>
+                        <div className="text-2xl mb-2">📤</div>
+                        <div className="text-sm text-coffee font-medium">
+                          {imageUrl ? "Ganti Gambar" : "Pilih Gambar"}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          JPG, PNG, max 5MB
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileUpload}
+                    disabled={uploading}
+                    className="hidden"
+                  />
+                </label>
               </div>
 
               <div className="flex gap-3 pt-4">
@@ -262,7 +349,8 @@ export default function AdminDashboard() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-coffee text-white py-2 rounded-full hover:bg-caramel"
+                  disabled={uploading}
+                  className="flex-1 bg-coffee text-white py-2 rounded-full hover:bg-caramel disabled:opacity-50"
                 >
                   {editing ? "Simpan" : "Tambah"}
                 </button>
