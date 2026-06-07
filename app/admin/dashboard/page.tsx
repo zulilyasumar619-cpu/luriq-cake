@@ -1,0 +1,276 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase, Product } from "@/lib/supabase";
+
+export default function AdminDashboard() {
+  const router = useRouter();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<Product | null>(null);
+  const [showForm, setShowForm] = useState(false);
+
+  // form state
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [price, setPrice] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const isAdmin = localStorage.getItem("isAdmin");
+      if (!isAdmin) {
+        router.push("/admin/login");
+        return;
+      }
+    }
+    fetchProducts();
+  }, [router]);
+
+  async function fetchProducts() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("products")
+      .select("*")
+      .order("id", { ascending: true });
+    if (!error && data) setProducts(data as Product[]);
+    setLoading(false);
+  }
+
+  function openNew() {
+    setEditing(null);
+    setName("");
+    setDescription("");
+    setPrice("");
+    setImageUrl("");
+    setShowForm(true);
+  }
+
+  function openEdit(p: Product) {
+    setEditing(p);
+    setName(p.name);
+    setDescription(p.description || "");
+    setPrice(String(p.price));
+    setImageUrl(p.image_url || "");
+    setShowForm(true);
+  }
+
+  async function saveProduct(e: React.FormEvent) {
+    e.preventDefault();
+    const payload = {
+      name,
+      description: description || null,
+      price: parseInt(price, 10),
+      image_url: imageUrl || null,
+    };
+
+    if (editing) {
+      const { error } = await supabase
+        .from("products")
+        .update(payload)
+        .eq("id", editing.id);
+      if (error) {
+        alert("Gagal update: " + error.message);
+        return;
+      }
+    } else {
+      const { error } = await supabase.from("products").insert(payload);
+      if (error) {
+        alert("Gagal tambah: " + error.message);
+        return;
+      }
+    }
+
+    setShowForm(false);
+    fetchProducts();
+  }
+
+  async function deleteProduct(id: number) {
+    if (!confirm("Yakin hapus produk ini?")) return;
+    const { error } = await supabase.from("products").delete().eq("id", id);
+    if (error) {
+      alert("Gagal hapus: " + error.message);
+      return;
+    }
+    fetchProducts();
+  }
+
+  function logout() {
+    localStorage.removeItem("isAdmin");
+    router.push("/admin/login");
+  }
+
+  return (
+    <div className="min-h-screen bg-cream">
+      <div className="max-w-6xl mx-auto px-6 py-10">
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl md:text-4xl font-light text-coffee">
+              Admin Dashboard
+            </h1>
+            <p className="text-caramel text-sm mt-1">Kelola produk Luriq Cake & Cookies</p>
+          </div>
+          <div className="flex gap-3">
+            <a
+              href="/"
+              className="text-sm px-4 py-2 border border-coffee rounded-full hover:bg-coffee hover:text-white"
+            >
+              Lihat Website
+            </a>
+            <button
+              onClick={logout}
+              className="text-sm px-4 py-2 border border-coffee rounded-full hover:bg-coffee hover:text-white"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-light">Daftar Produk</h2>
+            <button
+              onClick={openNew}
+              className="bg-coffee text-white px-5 py-2 rounded-full text-sm hover:bg-caramel"
+            >
+              + Tambah Produk
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-12 text-caramel">Memuat...</div>
+          ) : products.length === 0 ? (
+            <div className="text-center py-12 text-caramel">
+              Belum ada produk. Klik "Tambah Produk" untuk mulai.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {products.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex gap-4 bg-cream p-4 rounded-xl"
+                >
+                  <div className="w-20 h-20 bg-sand rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {p.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={p.image_url}
+                        alt={p.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-xs text-caramel">🍪</span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{p.name}</div>
+                    <div className="text-sm text-caramel truncate">
+                      {p.description || "-"}
+                    </div>
+                    <div className="text-sm font-semibold mt-1">
+                      Rp {Number(p.price).toLocaleString("id-ID")}
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => openEdit(p)}
+                        className="text-xs px-3 py-1 bg-coffee text-white rounded-full hover:bg-caramel"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => deleteProduct(p.id)}
+                        className="text-xs px-3 py-1 border border-red-500 text-red-500 rounded-full hover:bg-red-500 hover:text-white"
+                      >
+                        Hapus
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Form Modal */}
+      {showForm && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowForm(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-8 w-full max-w-md max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-2xl font-light mb-6">
+              {editing ? "Edit Produk" : "Tambah Produk"}
+            </h3>
+
+            <form onSubmit={saveProduct} className="space-y-4">
+              <div>
+                <label className="block text-sm mb-1 text-coffee">Nama Produk</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-2 focus:outline-none focus:border-coffee"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1 text-coffee">Deskripsi</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-2 focus:outline-none focus:border-coffee"
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1 text-coffee">Harga (Rp)</label>
+                <input
+                  type="number"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-2 focus:outline-none focus:border-coffee"
+                  required
+                  min="0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1 text-coffee">URL Gambar</label>
+                <input
+                  type="url"
+                  value={imageUrl}
+                  onChange={(e) => setImageUrl(e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-2 focus:outline-none focus:border-coffee"
+                  placeholder="https://..."
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Paste link gambar (bisa dari Imgur, Google Drive, atau Supabase Storage)
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  className="flex-1 border border-coffee text-coffee py-2 rounded-full hover:bg-coffee hover:text-white"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-coffee text-white py-2 rounded-full hover:bg-caramel"
+                >
+                  {editing ? "Simpan" : "Tambah"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
